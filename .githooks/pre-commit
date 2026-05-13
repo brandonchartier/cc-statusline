@@ -1,0 +1,8 @@
+#!/bin/bash
+set -e
+
+py_files=$(git diff --cached --name-only --diff-filter=ACM | grep '\.py$')
+if [ -n "$py_files" ]; then
+    echo "$py_files" | xargs ruff check
+    echo "$py_files" | xargs ruff format --diff
+fi
