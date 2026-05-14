@@ -1,6 +1,6 @@
 # cc-statusline
 
-A minimal [Claude Code statusline](https://docs.anthropic.com/en/docs/claude-code/statusline) script. Reads directly from the JSON Claude Code passes via stdin — no API calls, no OAuth, no caching.
+A minimal [Claude Code statusline](https://docs.anthropic.com/en/docs/claude-code/statusline) script. Reads directly from the JSON Claude Code passes via stdin, no API calls, no OAuth, no caching.
 
 ## What it shows
 
@@ -8,12 +8,12 @@ A minimal [Claude Code statusline](https://docs.anthropic.com/en/docs/claude-cod
 Sonnet 4.6 | cc-statusline@main | 42k/200k 21% | effort: med | 5h 18% @14:30 | 7d 41% @May 16 09:00 | 14:30
 ```
 
-- **Model** — current model name
-- **Directory + branch** — working directory, git branch, and unstaged diff stats
-- **Token usage** — tokens used / context window size and percentage
-- **Effort** — current reasoning effort level
-- **Rate limits** — 5-hour and 7-day usage with reset times (appears after first message)
-- **Time** — current local time
+- **Model** - current model name
+- **Directory + branch** - working directory, git branch, and unstaged diff stats
+- **Token usage** - tokens used / context window size and percentage
+- **Effort** - current reasoning effort level
+- **Rate limits** - 5-hour and 7-day usage with reset times (appears after first message)
+- **Time** - current local time
 
 ## Requirements
 
