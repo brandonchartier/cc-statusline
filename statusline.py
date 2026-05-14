@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -46,18 +47,9 @@ def git(*args: str, cwd: str) -> str:
 
 
 def git_diff_stats(cwd: str) -> tuple[int, int]:
-    added = 0
-    removed = 0
-
-    for line in git("diff", "--numstat", cwd=cwd).splitlines():
-        parts = line.split()
-        if len(parts) >= 2:
-            try:
-                added += int(parts[0])
-                removed += int(parts[1])
-            except ValueError:
-                pass
-
+    out = git("diff", "--shortstat", cwd=cwd)
+    added = int(m.group(1)) if (m := re.search(r"(\d+) insertion", out)) else 0
+    removed = int(m.group(1)) if (m := re.search(r"(\d+) deletion", out)) else 0
     return added, removed
 
 
