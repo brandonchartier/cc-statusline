@@ -3,12 +3,16 @@ import re
 import pytest
 
 from statusline import (
-    ContextWindow,
-    Effort,
-    RateLimit,
-    Repo,
-    StatusLine,
-    Text,
+    context_window_data,
+    fmt_context_window,
+    fmt_effort,
+    fmt_model,
+    fmt_rate_limit,
+    fmt_repo,
+    fmt_tokens,
+    rate_limit_data,
+    repo_info,
+    statusline,
 )
 
 
@@ -17,14 +21,14 @@ def strip_ansi(s: str) -> str:
 
 
 def render(d: dict) -> str:
-    return strip_ansi(str(StatusLine.from_dict(d).to_text()))
+    return strip_ansi(statusline(d))
 
 
-# --- Empty input ---
+# --- Model ---
 
 
-def test_empty_input():
-    assert strip_ansi(str(Text())) == ""
+def test_model_default():
+    assert strip_ansi(fmt_model("Claude")) == "Claude"
 
 
 # --- Token formatting ---
@@ -33,23 +37,16 @@ def test_empty_input():
 @pytest.mark.parametrize(
     "tokens,expected",
     [
-        (0, "0/200k"),
-        (999, "999/200k"),
-        (1000, "1k/200k"),
-        (15500, "15k/200k"),
-        (1_000_000, "1.0m/200k"),
-        (1_500_000, "1.5m/200k"),
+        (0, "0"),
+        (999, "999"),
+        (1000, "1k"),
+        (15500, "15k"),
+        (1_000_000, "1.0m"),
+        (1_500_000, "1.5m"),
     ],
 )
 def test_fmt_tokens(tokens, expected):
-    cw = ContextWindow.from_dict(
-        {
-            "total_input_tokens": tokens,
-            "context_window_size": 200000,
-            "used_percentage": 0,
-        }
-    )
-    assert expected in strip_ansi(str(cw.to_text()))
+    assert fmt_tokens(tokens) == expected
 
 
 # --- Effort levels ---
@@ -57,22 +54,42 @@ def test_fmt_tokens(tokens, expected):
 
 @pytest.mark.parametrize("level", ["low", "medium", "high", "xhigh", "max", "custom"])
 def test_effort_levels(level):
-    effort = Effort.from_dict({"level": level})
-    text = strip_ansi(str(effort.to_text()))
+    text = strip_ansi(fmt_effort(level))
     assert level in text or (level == "medium" and "med" in text)
 
 
 # --- Repo ---
 
 
-def test_repo_no_cwd():
-    assert Repo.from_dict({}) is None
+def test_repo_info_no_cwd():
+    assert repo_info({}) is None
 
 
-def test_repo_worktree_branch():
-    repo = Repo.from_dict({"cwd": "/tmp", "worktree": {"branch": "my-branch"}})
-    assert repo is not None
-    assert repo.worktree_branch == "my-branch"
+def test_repo_info_worktree_branch():
+    info = repo_info({"cwd": "/tmp", "worktree": {"branch": "my-branch"}})
+    assert info is not None
+    assert info[1] == "my-branch"
+
+
+def test_repo_shows_diff():
+    result = strip_ansi(fmt_repo(("repo", "main", 5, 3)))
+    assert "+5" in result
+    assert "-3" in result
+
+
+def test_repo_no_diff():
+    result = strip_ansi(fmt_repo(("repo", "main", 0, 0)))
+    assert "+" not in result
+    assert "-" not in result
+
+
+def test_repo_no_branch():
+    result = strip_ansi(fmt_repo(("repo", "", 0, 0)))
+    assert "@" not in result
+
+
+def test_repo_none():
+    assert fmt_repo(None) == ""
 
 
 def test_repo_segment_uses_dirname():
@@ -80,26 +97,54 @@ def test_repo_segment_uses_dirname():
     assert "cc-statusline" in result
 
 
+# --- Context window ---
+
+
+def test_context_window_data():
+    used, size, pct = context_window_data(
+        {
+            "total_input_tokens": 15500,
+            "context_window_size": 200000,
+            "used_percentage": 8,
+        }
+    )
+    assert used == "15k"
+    assert size == "200k"
+    assert pct == 8
+
+
+def test_context_window_format():
+    result = strip_ansi(fmt_context_window("15k", "200k", 8))
+    assert "15k/200k" in result
+    assert "8%" in result
+
+
 # --- Rate limits ---
 
 
+def test_rate_limit_data_absent():
+    assert rate_limit_data({}) is None
+
+
+def test_rate_limit_data_present():
+    data = rate_limit_data({"used_percentage": 23.5, "resets_at": 1738425600})
+    assert data == (24, 1738425600)
+
+
 def test_rate_limit_absent():
-    rl = RateLimit.from_dict({})
-    assert str(rl.to_text(label="5h", time_fmt="%H:%M")) == ""
+    assert fmt_rate_limit("5h", None, time_fmt="%H:%M") == ""
 
 
 def test_rate_limit_no_reset():
-    rl = RateLimit.from_dict({"used_percentage": 23.5})
-    text = strip_ansi(str(rl.to_text(label="5h", time_fmt="%H:%M")))
+    text = strip_ansi(fmt_rate_limit("5h", (24, None), time_fmt="%H:%M"))
     assert "5h" in text
     assert "24%" in text
     assert "@" not in text
 
 
 def test_rate_limit_with_reset():
-    rl = RateLimit.from_dict({"used_percentage": 23.5, "resets_at": 1738425600})
-    text = strip_ansi(str(rl.to_text(label="5h", time_fmt="@%H:%M")))
-    assert "@" in text
+    text = strip_ansi(fmt_rate_limit("5h", (24, 1738425600), time_fmt="%H:%M"))
+    assert ":" in text
 
 
 @pytest.mark.parametrize(
@@ -112,8 +157,7 @@ def test_rate_limit_with_reset():
     ],
 )
 def test_rate_limit_usage_colors(pct, color_code):
-    rl = RateLimit.from_dict({"used_percentage": pct})
-    text = str(rl.to_text(label="5h", time_fmt="%H:%M"))
+    text = fmt_rate_limit("5h", (pct, None), time_fmt="%H:%M")
     assert color_code in text
 
 
@@ -217,8 +261,6 @@ def test_full_schema():
 
 def test_sep_joins_non_empty_parts():
     result = render({"model": {"display_name": "Claude"}})
-    # Should not start or end with separator
     assert not result.startswith("|")
     assert not result.endswith("|")
-    # No double separators from empty parts
     assert "||" not in result

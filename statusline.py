@@ -5,45 +5,51 @@ import json
 import re
 import subprocess
 import sys
-from dataclasses import dataclass, field
 from datetime import datetime
+from typing import NamedTuple
 
 
-class Text(str):
-    def __add__(self, other):
-        return Text(str.__add__(self, str(other)))
-
-    def __radd__(self, other):
-        return Text(str.__add__(str(other), self))
-
-    def join(self, parts):
-        return Text(str.join(self, (str(p) for p in parts)))
-
-
-class Style:
+class Code:
     def __init__(self, code: str):
         self.code = code
 
-    def __call__(self, text) -> Text:
-        return Text(f"{self.code}{text}\033[0m")
+    def __call__(self, text) -> str:
+        return f"{self.code}{text}\033[0m"
 
 
-BLUE = Style("\033[94m")
-ORANGE = Style("\033[33m")
-GREEN = Style("\033[32m")
-CYAN = Style("\033[36m")
-RED = Style("\033[31m")
-YELLOW = Style("\033[93m")
-PURPLE = Style("\033[35m")
-WHITE = Style("\033[37m")
-DIM = Style("\033[2m")
-SEP = " " + DIM("|") + " "
+class Color:
+    BLUE = Code("\033[94m")
+    ORANGE = Code("\033[33m")
+    GREEN = Code("\033[32m")
+    CYAN = Code("\033[36m")
+    RED = Code("\033[31m")
+    YELLOW = Code("\033[93m")
+    PURPLE = Code("\033[35m")
+    WHITE = Code("\033[37m")
+    DIM = Code("\033[2m")
+
+
+class RepoInfo(NamedTuple):
+    name: str
+    branch: str
+    added: int
+    removed: int
+
+
+class ContextWindowData(NamedTuple):
+    used: str
+    size: str
+    pct: int
+
+
+class RateLimitData(NamedTuple):
+    pct: int
+    reset: int | None
 
 
 def git(*args: str, cwd: str) -> str:
-    return subprocess.run(
-        ["git", "-C", cwd, *args], capture_output=True, text=True
-    ).stdout.strip()
+    out = subprocess.run(["git", "-C", cwd, *args], capture_output=True, text=True)
+    return out.stdout.strip()
 
 
 def git_diff_stats(cwd: str) -> tuple[int, int]:
@@ -53,188 +59,142 @@ def git_diff_stats(cwd: str) -> tuple[int, int]:
     return added, removed
 
 
-@dataclass
-class Model:
-    display_name: str = "Claude"
-
-    def to_text(self) -> Text:
-        return BLUE(self.display_name)
-
-    @classmethod
-    def from_dict(cls, d: dict) -> Model:
-        return cls(display_name=d.get("display_name", "Claude"))
+def fmt_tokens(n: int) -> str:
+    match n:
+        case n if n >= 1_000_000:
+            return f"{n / 1e6:.1f}m"
+        case n if n >= 1_000:
+            return f"{n // 1000}k"
+        case _:
+            return str(n)
 
 
-@dataclass
-class ContextWindow:
-    size: int = 200000
-    used_percentage: float = 0.0
-    total_tokens: int = 0
+def repo_info(d: dict) -> RepoInfo | None:
+    if not (cwd := d.get("cwd")):
+        return None
 
-    @staticmethod
-    def _fmt_tokens(n: int) -> str:
-        match n:
-            case n if n >= 1_000_000:
-                return f"{n / 1e6:.1f}m"
-            case n if n >= 1_000:
-                return f"{n // 1000}k"
-            case _:
-                return str(n)
+    name = cwd.split("/")[-1]
+    added, removed = git_diff_stats(cwd)
+    branch = d.get("worktree", {}).get("branch") or git(
+        "rev-parse", "--abbrev-ref", "HEAD", cwd=cwd
+    )
 
-    def to_text(self) -> Text:
-        used = self._fmt_tokens(self.total_tokens)
-        size = self._fmt_tokens(self.size)
-        tokens = ORANGE(f"{used}/{size}")
-        percent = GREEN(f"{round(self.used_percentage)}%")
-
-        return tokens + " " + percent
-
-    @classmethod
-    def from_dict(cls, d: dict) -> ContextWindow:
-        return cls(
-            size=d.get("context_window_size", 200000),
-            used_percentage=d.get("used_percentage", 0.0),
-            total_tokens=d.get("total_input_tokens", 0),
-        )
+    return RepoInfo(name, branch, added, removed)
 
 
-@dataclass
-class RateLimit:
-    used_percentage: float | None = None
-    resets_at: int | None = None
-
-    @staticmethod
-    def _usage_style(pct: float) -> Style:
-        match pct:
-            case p if p >= 90:
-                return RED
-            case p if p >= 70:
-                return ORANGE
-            case p if p >= 50:
-                return YELLOW
-            case _:
-                return GREEN
-
-    def to_text(self, *, label: str, time_fmt: str) -> Text:
-        if self.used_percentage is None:
-            return Text()
-
-        pct = round(self.used_percentage)
-        label = WHITE(label)
-        percentage = self._usage_style(pct)(f"{pct}%")
-
-        if not self.resets_at:
-            return label + " " + percentage
-
-        reset = DIM(datetime.fromtimestamp(self.resets_at).strftime(time_fmt))
-
-        return label + " " + percentage + " " + reset
-
-    @classmethod
-    def from_dict(cls, d: dict) -> RateLimit:
-        return cls(
-            used_percentage=d.get("used_percentage"),
-            resets_at=d.get("resets_at"),
-        )
+def context_window_data(d: dict) -> ContextWindowData:
+    used = fmt_tokens(d.get("total_input_tokens", 0))
+    size = fmt_tokens(d.get("context_window_size", 200000))
+    pct = round(d.get("used_percentage", 0))
+    return ContextWindowData(used, size, pct)
 
 
-@dataclass
-class Effort:
-    level: str = "medium"
+def rate_limit_data(d: dict) -> RateLimitData | None:
+    if (used := d.get("used_percentage")) is None:
+        return None
 
-    def to_text(self) -> Text:
-        match self.level:
-            case "low":
-                label = DIM("low")
-            case "medium":
-                label = ORANGE("med")
-            case "high":
-                label = GREEN("high")
-            case "xhigh":
-                label = PURPLE("xhigh")
-            case "max":
-                label = RED("max")
-            case other:
-                label = GREEN(other)
-        return "effort: " + label
-
-    @classmethod
-    def from_dict(cls, d: dict) -> Effort:
-        return cls(level=(d or {}).get("level", "medium"))
+    return RateLimitData(round(used), d.get("resets_at"))
 
 
-@dataclass
-class Repo:
-    cwd: str
-    worktree_branch: str | None = None
-
-    def to_text(self) -> Text:
-        directory = CYAN(self.cwd.split("/")[-1])
-        branch = self.worktree_branch or git(
-            "rev-parse", "--abbrev-ref", "HEAD", cwd=self.cwd
-        )
-
-        if not branch:
-            return directory
-
-        added, removed = git_diff_stats(self.cwd)
-        branch = DIM("@") + GREEN(branch)
-        diff = Text()
-
-        if added or removed:
-            additions = GREEN(f"+{added}")
-            deletions = RED(f"-{removed}")
-            diff = " " + DIM("(") + additions + " " + deletions + DIM(")")
-
-        return directory + branch + diff
-
-    @classmethod
-    def from_dict(cls, d: dict) -> Repo | None:
-        if not (cwd := (d or {}).get("cwd")):
-            return None
-
-        return cls(
-            cwd=cwd,
-            worktree_branch=(d.get("worktree") or {}).get("branch") or None,
-        )
+def fmt_time() -> str:
+    return Color.WHITE(datetime.now().strftime("%H:%M"))
 
 
-@dataclass
-class StatusLine:
-    model: Model = field(default_factory=Model)
-    context_window: ContextWindow = field(default_factory=ContextWindow)
-    five_hour: RateLimit = field(default_factory=RateLimit)
-    seven_day: RateLimit = field(default_factory=RateLimit)
-    repo: Repo | None = None
-    effort: Effort = field(default_factory=Effort)
+def fmt_model(name: str) -> str:
+    return Color.BLUE(name)
 
-    def to_text(self) -> Text:
-        parts = [
-            self.model.to_text(),
-            self.repo.to_text() if self.repo else Text(),
-            self.context_window.to_text(),
-            self.effort.to_text(),
-            self.five_hour.to_text(label="5h", time_fmt="@%H:%M"),
-            self.seven_day.to_text(label="7d", time_fmt="%m/%d %H:%M"),
-            WHITE(datetime.now().strftime("%H:%M")),
+
+def fmt_repo(info: RepoInfo | None) -> str:
+    if info is None:
+        return ""
+
+    name, branch, added, removed = info
+    directory = Color.CYAN(name)
+
+    if not branch:
+        return directory
+
+    branch_str = Color.GREEN(branch)
+    added_str = Color.GREEN(f"+{added}")
+    removed_str = Color.RED(f"-{removed}")
+    diff = f" ({added_str} {removed_str})" if added or removed else ""
+
+    return f"{directory}@{branch_str}{diff}"
+
+
+def fmt_context_window(used: str, size: str, pct: int) -> str:
+    tokens = Color.ORANGE(f"{used}/{size}")
+    percent = Color.GREEN(f"{pct}%")
+    return f"{tokens} {percent}"
+
+
+def fmt_effort(level: str) -> str:
+    match level:
+        case "low":
+            return f"effort: {Color.DIM('low')}"
+        case "medium":
+            return f"effort: {Color.ORANGE('med')}"
+        case "high":
+            return f"effort: {Color.GREEN('high')}"
+        case "xhigh":
+            return f"effort: {Color.PURPLE('xhigh')}"
+        case "max":
+            return f"effort: {Color.RED('max')}"
+        case other:
+            return f"effort: {Color.GREEN(other)}"
+
+
+def fmt_usage(pct: int) -> str:
+    match pct:
+        case p if p >= 90:
+            return Color.RED(f"{pct}%")
+        case p if p >= 70:
+            return Color.ORANGE(f"{pct}%")
+        case p if p >= 50:
+            return Color.YELLOW(f"{pct}%")
+        case _:
+            return Color.GREEN(f"{pct}%")
+
+
+def fmt_rate_limit(label: str, data: RateLimitData | None, *, time_fmt: str) -> str:
+    if data is None:
+        return ""
+
+    pct, reset = data
+    reset_fmt = datetime.fromtimestamp(reset).strftime(time_fmt) if reset else ""
+    percent = fmt_usage(pct)
+    reset_time = f" {Color.DIM(reset_fmt)}" if reset_fmt else ""
+    return f"{Color.WHITE(label)} {percent}{reset_time}"
+
+
+def fmt_statusline(parts: list[str]) -> str:
+    return " | ".join(p for p in parts if p)
+
+
+def statusline(d: dict) -> str:
+    rl = d.get("rate_limits", {})
+    model = d.get("model", {}).get("display_name", "Claude")
+    repo = repo_info(d)
+    cw = context_window_data(d.get("context_window", {}))
+    effort = d.get("effort", {}).get("level", "medium")
+    five_hour = rate_limit_data(rl.get("five_hour", {}))
+    seven_day = rate_limit_data(rl.get("seven_day", {}))
+
+    return fmt_statusline(
+        [
+            fmt_time(),
+            fmt_model(model),
+            fmt_repo(repo),
+            fmt_context_window(cw.used, cw.size, cw.pct),
+            fmt_effort(effort),
+            fmt_rate_limit("5h", five_hour, time_fmt="%H:%M"),
+            fmt_rate_limit("7d", seven_day, time_fmt="%b %d %H:%M"),
         ]
-        return SEP.join(p for p in parts if p)
-
-    @classmethod
-    def from_dict(cls, d: dict) -> StatusLine:
-        rl = d.get("rate_limits") or {}
-        return cls(
-            model=Model.from_dict(d.get("model") or {}),
-            context_window=ContextWindow.from_dict(d.get("context_window") or {}),
-            five_hour=RateLimit.from_dict(rl.get("five_hour") or {}),
-            seven_day=RateLimit.from_dict(rl.get("seven_day") or {}),
-            repo=Repo.from_dict(d),
-            effort=Effort.from_dict(d.get("effort") or {}),
-        )
+    )
 
 
 if __name__ == "__main__":
     if raw := sys.stdin.read().strip():
-        print(StatusLine.from_dict(json.loads(raw)).to_text(), end="")
+        print(statusline(json.loads(raw)), end="")
     else:
         print("Claude", end="")
