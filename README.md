@@ -23,7 +23,7 @@ Sonnet 4.6 | cc-statusline@main | 42k/200k 21% | effort: med | 5h 18% @14:30 | 7
 ## Install
 
 ```sh
-cp statusline.py ~/.claude/statusline/statusline.py
+git clone https://github.com/brandonchartier/cc-statusline ~/.claude/statusline
 ```
 
 Then point Claude Code at it in `~/.claude/settings.json`:
