@@ -98,7 +98,7 @@ def test_rate_limit_no_reset():
 
 def test_rate_limit_with_reset():
     rl = RateLimit.from_dict({"used_percentage": 23.5, "resets_at": 1738425600})
-    text = strip_ansi(str(rl.to_text(label="5h", time_fmt="%H:%M")))
+    text = strip_ansi(str(rl.to_text(label="5h", time_fmt="@%H:%M")))
     assert "@" in text
 
 

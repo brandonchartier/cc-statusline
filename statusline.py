@@ -134,7 +134,7 @@ class RateLimit:
         if not self.resets_at:
             return label + " " + percentage
 
-        reset = DIM(f"@{datetime.fromtimestamp(self.resets_at).strftime(time_fmt)}")
+        reset = DIM(datetime.fromtimestamp(self.resets_at).strftime(time_fmt))
 
         return label + " " + percentage + " " + reset
 
@@ -222,8 +222,8 @@ class StatusLine:
             self.repo.to_text() if self.repo else Text(),
             self.context_window.to_text(),
             self.effort.to_text(),
-            self.five_hour.to_text(label="5h", time_fmt="%H:%M"),
-            self.seven_day.to_text(label="7d", time_fmt="%b %-d %H:%M"),
+            self.five_hour.to_text(label="5h", time_fmt="@%H:%M"),
+            self.seven_day.to_text(label="7d", time_fmt="%m/%d %H:%M"),
             WHITE(datetime.now().strftime("%H:%M")),
         ]
         return SEP.join(p for p in parts if p)
