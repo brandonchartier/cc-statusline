@@ -60,13 +60,12 @@ def git_diff_stats(cwd: str) -> tuple[int, int]:
 
 
 def fmt_tokens(n: int) -> str:
-    match n:
-        case n if n >= 1_000_000:
-            return f"{n / 1e6:.1f}m"
-        case n if n >= 1_000:
-            return f"{n // 1000}k"
-        case _:
-            return str(n)
+    if n >= 1_000_000:
+        return f"{n / 1e6:.1f}m"
+    if n >= 1_000:
+        return f"{n // 1000}k"
+
+    return str(n)
 
 
 def repo_info(d: dict) -> RepoInfo | None:
@@ -116,7 +115,11 @@ def fmt_repo(info: RepoInfo | None) -> str:
     branch_str = Color.GREEN(info.branch)
     added_str = Color.GREEN(f"+{info.added}")
     removed_str = Color.RED(f"-{info.removed}")
-    diff = f" ({added_str} {removed_str})" if info.added or info.removed else ""
+
+    if info.added or info.removed:
+        diff = f" ({added_str} {removed_str})"
+    else:
+        diff = ""
 
     return f"{directory}@{branch_str}{diff}"
 
@@ -128,31 +131,29 @@ def fmt_context_window(used: str, size: str, pct: int) -> str:
 
 
 def fmt_effort(level: str) -> str:
-    match level:
-        case "low":
-            return f"effort: {Color.DIM('low')}"
-        case "medium":
-            return f"effort: {Color.ORANGE('med')}"
-        case "high":
-            return f"effort: {Color.GREEN('high')}"
-        case "xhigh":
-            return f"effort: {Color.PURPLE('xhigh')}"
-        case "max":
-            return f"effort: {Color.RED('max')}"
-        case other:
-            return f"effort: {Color.GREEN(other)}"
+    if level == "low":
+        return f"effort: {Color.DIM('low')}"
+    if level == "medium":
+        return f"effort: {Color.ORANGE('med')}"
+    if level == "high":
+        return f"effort: {Color.GREEN('high')}"
+    if level == "xhigh":
+        return f"effort: {Color.PURPLE('xhigh')}"
+    if level == "max":
+        return f"effort: {Color.RED('max')}"
+
+    return f"effort: {Color.GREEN(level)}"
 
 
 def fmt_usage(pct: int) -> str:
-    match pct:
-        case p if p >= 90:
-            return Color.RED(f"{pct}%")
-        case p if p >= 70:
-            return Color.ORANGE(f"{pct}%")
-        case p if p >= 50:
-            return Color.YELLOW(f"{pct}%")
-        case _:
-            return Color.GREEN(f"{pct}%")
+    if pct >= 90:
+        return Color.RED(f"{pct}%")
+    if pct >= 70:
+        return Color.ORANGE(f"{pct}%")
+    if pct >= 50:
+        return Color.YELLOW(f"{pct}%")
+
+    return Color.GREEN(f"{pct}%")
 
 
 def fmt_rate_limit(label: str, data: RateLimitData | None, *, time_fmt: str) -> str:
