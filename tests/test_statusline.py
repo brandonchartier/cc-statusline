@@ -3,6 +3,8 @@ import re
 import pytest
 
 from statusline import (
+    RateLimitData,
+    RepoInfo,
     context_window_data,
     fmt_context_window,
     fmt_effort,
@@ -72,19 +74,19 @@ def test_repo_info_worktree_branch():
 
 
 def test_repo_shows_diff():
-    result = strip_ansi(fmt_repo(("repo", "main", 5, 3)))
+    result = strip_ansi(fmt_repo(RepoInfo("repo", "main", 5, 3)))
     assert "+5" in result
     assert "-3" in result
 
 
 def test_repo_no_diff():
-    result = strip_ansi(fmt_repo(("repo", "main", 0, 0)))
+    result = strip_ansi(fmt_repo(RepoInfo("repo", "main", 0, 0)))
     assert "+" not in result
     assert "-" not in result
 
 
 def test_repo_no_branch():
-    result = strip_ansi(fmt_repo(("repo", "", 0, 0)))
+    result = strip_ansi(fmt_repo(RepoInfo("repo", "", 0, 0)))
     assert "@" not in result
 
 
@@ -136,14 +138,16 @@ def test_rate_limit_absent():
 
 
 def test_rate_limit_no_reset():
-    text = strip_ansi(fmt_rate_limit("5h", (24, None), time_fmt="%H:%M"))
+    text = strip_ansi(fmt_rate_limit("5h", RateLimitData(24, None), time_fmt="%H:%M"))
     assert "5h" in text
     assert "24%" in text
     assert "@" not in text
 
 
 def test_rate_limit_with_reset():
-    text = strip_ansi(fmt_rate_limit("5h", (24, 1738425600), time_fmt="%H:%M"))
+    text = strip_ansi(
+        fmt_rate_limit("5h", RateLimitData(24, 1738425600), time_fmt="%H:%M")
+    )
     assert ":" in text
 
 
@@ -157,7 +161,7 @@ def test_rate_limit_with_reset():
     ],
 )
 def test_rate_limit_usage_colors(pct, color_code):
-    text = fmt_rate_limit("5h", (pct, None), time_fmt="%H:%M")
+    text = fmt_rate_limit("5h", RateLimitData(pct, None), time_fmt="%H:%M")
     assert color_code in text
 
 
