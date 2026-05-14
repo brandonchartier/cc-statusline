@@ -108,16 +108,15 @@ def fmt_repo(info: RepoInfo | None) -> str:
     if info is None:
         return ""
 
-    name, branch, added, removed = info
-    directory = Color.CYAN(name)
+    directory = Color.CYAN(info.name)
 
-    if not branch:
+    if not info.branch:
         return directory
 
-    branch_str = Color.GREEN(branch)
-    added_str = Color.GREEN(f"+{added}")
-    removed_str = Color.RED(f"-{removed}")
-    diff = f" ({added_str} {removed_str})" if added or removed else ""
+    branch_str = Color.GREEN(info.branch)
+    added_str = Color.GREEN(f"+{info.added}")
+    removed_str = Color.RED(f"-{info.removed}")
+    diff = f" ({added_str} {removed_str})" if info.added or info.removed else ""
 
     return f"{directory}@{branch_str}{diff}"
 
@@ -160,9 +159,10 @@ def fmt_rate_limit(label: str, data: RateLimitData | None, *, time_fmt: str) -> 
     if data is None:
         return ""
 
-    pct, reset = data
-    reset_fmt = datetime.fromtimestamp(reset).strftime(time_fmt) if reset else ""
-    percent = fmt_usage(pct)
+    reset_fmt = (
+        datetime.fromtimestamp(data.reset).strftime(time_fmt) if data.reset else ""
+    )
+    percent = fmt_usage(data.pct)
     reset_time = f" {Color.DIM(reset_fmt)}" if reset_fmt else ""
     return f"{Color.WHITE(label)} {percent}{reset_time}"
 
