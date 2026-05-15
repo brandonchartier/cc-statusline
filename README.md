@@ -39,14 +39,7 @@ Then point Claude Code at it in `~/.claude/settings.json`:
 
 ## Contributing
 
-Enable the git hooks:
-
 ```sh
-git config core.hooksPath .githooks
-```
-
-Run tests:
-
-```sh
-uv run pytest
+make setup
+make test
 ```
